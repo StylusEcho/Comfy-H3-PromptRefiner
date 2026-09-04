@@ -1,0 +1,15 @@
+[project]
+name = "h3-prompt-refiner"
+version = "1.0.0"
+description = "Expands a sentence into the Context-IR description MiniMax H3 was trained to read, with a small local Qwen3-VL or an OpenAI-compatible server. Spun out of ComfyUI-Continuity."
+license = { file = "LICENSE" }
+requires-python = ">=3.10"
+dependencies = []
+
+[project.urls]
+Repository = "https://github.com/StylusEcho/Comfy-H3-PromptRefiner"
+"Bug Tracker" = "https://github.com/StylusEcho/Comfy-H3-PromptRefiner/issues"
+
+[tool.comfy]
+PublisherId = "stylusecho"
+DisplayName = "H3 Prompt Refiner"

@@ -1,0 +1,52 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 760 250" width="760" height="250"
+     font-family="ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, sans-serif"
+     role="img" aria-label="A backend node feeds the H3 Prompt Refiner, whose prompt output feeds a text encoder.">
+  <style>
+    .box { fill: #ffffff; stroke: #b9c0cc; stroke-width: 1.5; rx: 8; }
+    .head { fill: #2f3640; font-size: 14px; font-weight: 600; }
+    .sub  { fill: #6b7480; font-size: 11.5px; }
+    .sock { fill: #4a5464; font-size: 11.5px; }
+    .wire { stroke: #7d8794; stroke-width: 1.6; fill: none; }
+    .dot  { fill: #7d8794; }
+    @media (prefers-color-scheme: dark) {
+      .box { fill: #22262c; stroke: #454c57; }
+      .head { fill: #e8ebef; }
+      .sub  { fill: #9aa3ae; }
+      .sock { fill: #c2c9d2; }
+      .wire { stroke: #7d8794; }
+    }
+  </style>
+
+  <rect class="box" x="12" y="24" width="196" height="76" rx="8"/>
+  <text class="head" x="28" y="50">H3 Refiner Model</text>
+  <text class="sub"  x="28" y="70">text_encoder: qwen3vl-4b</text>
+  <text class="sub"  x="28" y="88">— or H3 Refiner Server —</text>
+  <circle class="dot" cx="208" cy="62" r="4"/>
+  <text class="sock" x="160" y="59" text-anchor="end">refiner</text>
+
+  <path class="wire" d="M212 62 C 248 62, 248 74, 284 74"/>
+
+  <rect class="box" x="288" y="14" width="212" height="222" rx="8"/>
+  <text class="head" x="304" y="40">H3 Prompt Refiner</text>
+  <circle class="dot" cx="288" cy="74" r="4"/>
+  <text class="sock" x="300" y="78">refiner</text>
+  <text class="sub"  x="304" y="102">prompt: a red door in the rain</text>
+  <text class="sub"  x="304" y="120">seconds: 6.0   template: auto</text>
+  <circle class="dot" cx="288" cy="146" r="4"/>
+  <text class="sock" x="300" y="150">start_frame</text>
+  <circle class="dot" cx="288" cy="170" r="4"/>
+  <text class="sock" x="300" y="174">references</text>
+  <circle class="dot" cx="500" cy="146" r="4"/>
+  <text class="sock" x="488" y="150" text-anchor="end">prompt</text>
+  <circle class="dot" cx="500" cy="170" r="4"/>
+  <text class="sock" x="488" y="174" text-anchor="end">notes</text>
+
+  <path class="wire" d="M504 146 C 540 146, 540 62, 576 62"/>
+
+  <rect class="box" x="580" y="24" width="168" height="76" rx="8"/>
+  <text class="head" x="596" y="50">CLIPTextEncode</text>
+  <text class="sub"  x="596" y="70">the H3 encoder</text>
+  <text class="sub"  x="596" y="88">then your sampler</text>
+  <circle class="dot" cx="580" cy="62" r="4"/>
+  <text class="sock" x="592" y="66">text</text>
+</svg>

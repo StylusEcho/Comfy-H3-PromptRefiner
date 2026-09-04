@@ -74,16 +74,33 @@ def image(role, ordinal, filename="", takes="full"):
                  filename=filename, takes=takes)
 
 
-def derive_mode(first_frame, last_frame, references):
+def video(ordinal, filename="", sound=False):
+    """One reference video, and whether its soundtrack rides with it.
+
+    `sound` is the pairing the H3 node makes: a clip presented with its own audio
+    takes an `<Audio j>` immediately before its `<Video k>`. Said as a `track`
+    because that is the field `prompting.slot_row` reads to decide what the
+    glossary line calls it.
+    """
+    return Asset(handle=f"{_PREFIX['video']}-{ordinal}", kind="video", role="reference",
+                 filename=filename, track="picture+sound" if sound else "picture")
+
+
+def audio(ordinal, filename=""):
+    """One standalone audio reference. Nothing can be shown of it."""
+    return Asset(handle=f"{_PREFIX['audio']}-{ordinal}", kind="audio", role="reference",
+                 filename=filename)
+
+
+def derive_mode(first_frame, last_frame, references, videos=(), audios=()):
     """What this request is, in H3's own name for it.
 
     The shape is read here — something opens, something closes, something is
     cited — exactly as `compile._derive_mode` reads it. References and frames do
     not lock each other out: Ref2VA is the superset training and it is what a
-    mixed request runs on, so anything with a reference in it is REF2VA whatever
-    else is attached.
+    mixed request runs on, so anything cited is REF2VA whatever else is attached.
     """
-    if references:
+    if references or videos or audios:
         return "REF2VA"
     if first_frame is not None and last_frame is not None:
         return "FL2VA"
@@ -94,29 +111,53 @@ def derive_mode(first_frame, last_frame, references):
     return "T2VA"
 
 
-def plan(first_frame=None, last_frame=None, references=()):
+def plan(first_frame=None, last_frame=None, references=(), videos=(), audios=()):
     """The attachments -> `([asset], {handle: label})`, in presentation order.
 
-    One ordered walk, because the ordinals in the prompt and the tensors in the
-    payload have to agree and there is only one order to read them from. It is
-    `compile.plan_references` followed by `compile._trailing_frame_labels`: every
-    reference takes the `<Picture N>` it would have had on its own, and the
-    frames take the next ordinals after them.
+    One ordered walk, because the ordinals in the prompt and the tensors handed
+    to the sampler have to agree and there is only one order to read them from.
+    It is `compile.plan_references` followed by `compile._trailing_frame_labels`,
+    and it is the order H3's own node presents in (`comfy_extras/
+    nodes_minimax_h3.py`): pictures, then videos, then standalone audio, with the
+    keyframes trailing all of it.
 
-    With no references at all, the frames are the whole presentation and the
-    walk collapses to `compile._keyframe_labels` — start frame `<Picture 1>`, end
-    frame `<Picture 2>` where both are attached, and `<Picture 1>` where the end
-    frame is the only one.
+    **A video with a soundtrack is two citations.** Its `<Audio j>` is emitted
+    immediately *before* its `<Video k>`, which is the presentation order the
+    tokenizer expects. The soundtrack has no handle of its own — nothing points
+    at it separately — so its label is filed under `"<video handle>:sound"`, a
+    key `normalize_handles` skips when it builds the reverse map and `check`
+    still counts as a label something will be given.
 
-    The list is the order to hand the pictures to the encoder in. The node's own
-    sockets are read in this order too, so what the refiner is shown as
-    `[image 3]` is the third picture in the message.
+    With nothing but keyframes, the walk collapses to `compile._keyframe_labels`
+    — start frame `<Picture 1>`, end frame `<Picture 2>` where both are attached,
+    and `<Picture 1>` where the end frame is the only one.
+
+    The list is also the order to hand the pictures to the refiner in, so what it
+    is shown as `[image 3]` is the third picture in the message.
     """
-    ordered = list(references) + [a for a in (first_frame, last_frame) if a is not None]
-    labels, counts = {}, {"image": 0, "video": 0, "audio": 0}
-    for asset in ordered:
-        counts[asset.kind] += 1
-        labels[asset.handle] = f"<{_CITE[asset.kind]} {counts[asset.kind]}>"
+    ordered, labels = [], {}
+    picture = video = audio = 0
+
+    for asset in references:
+        picture += 1
+        labels[asset.handle] = f"<Picture {picture}>"
+        ordered.append(asset)
+    for asset in videos:
+        if asset.track == "picture+sound":
+            audio += 1
+            labels[f"{asset.handle}:sound"] = f"<Audio {audio}>"
+        video += 1
+        labels[asset.handle] = f"<Video {video}>"
+        ordered.append(asset)
+    for asset in audios:
+        audio += 1
+        labels[asset.handle] = f"<Audio {audio}>"
+        ordered.append(asset)
+    for asset in (first_frame, last_frame):
+        if asset is not None:
+            picture += 1
+            labels[asset.handle] = f"<Picture {picture}>"
+            ordered.append(asset)
     return ordered, labels
 
 

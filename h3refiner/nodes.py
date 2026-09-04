@@ -54,6 +54,124 @@ def _frames(image):
     return [_pil(image, index) for index in range(image.shape[0])]
 
 
+def _still(clip):
+    """One frame that says what a reference clip holds, or None if it is empty.
+
+    The middle one. A clip's opening frame is very often a fade, a slate or an
+    empty room, and the refiner is being shown this to say what is *in* the clip
+    — so the frame furthest from either end is the better single answer. One
+    frame and not more: every picture sits in the context window for the whole
+    generation and each of a few thousand output tokens attends over it again,
+    so a three-second clip contributing sixty frames would crowd out the guide.
+    """
+    if clip is None or not len(clip):
+        return None
+    return _pil(clip, len(clip) // 2)
+
+
+# ---- the Fantastic MiniMax H3 Prompt Builder's bundle ------------------------
+
+# The type string its Media Loader and Prompt Builder emit their `references`
+# output as. ComfyUI matches sockets by name, so declaring an input of this type
+# is the whole of the interoperation — nothing is imported, and the pack does
+# not have to be installed for this one to load.
+BUNDLE = "H3_REFS"
+
+# What that bundle holds, and the order it holds it in. `video_audios` is
+# index-aligned with `videos`, carrying None where a clip has no paired
+# soundtrack, which is the pairing H3's own node presents: a clip's `<Audio j>`
+# comes immediately before its `<Video k>`.
+_BUNDLE_KEYS = ("pictures", "videos", "video_audios", "audios")
+
+
+def _names(bundle):
+    """The filenames in the bundle's item list, per group. Empty where unknown.
+
+    The loader keeps its raw panel state under `items`, including entries the
+    user switched off — which never reach the tensors. Re-partitioning by the
+    same rule it documents (`enabled is False` is dropped, and a clip's split
+    soundtrack goes to the paired or the standalone group by `audio_mode`) is
+    what lines a name up with the tensor it belongs to.
+
+    Best effort by design: a name is a nice clue for the refiner to read in a
+    glossary line and nothing depends on it, so a bundle whose items do not
+    line up with its tensors falls back to positional names rather than
+    refusing. Nothing here trusts the item list for anything but a label.
+    """
+    items = bundle.get("items")
+    if not isinstance(items, list):
+        return {key: [] for key in _BUNDLE_KEYS}
+
+    groups = {key: [] for key in _BUNDLE_KEYS}
+    for item in items:
+        if not isinstance(item, dict) or item.get("enabled") is False:
+            continue
+        name = str(item.get("name") or "")
+        kind = item.get("kind")
+        if kind == "picture":
+            groups["pictures"].append(name)
+        elif kind == "video":
+            paired = bool(item.get("has_audio")) and item.get("audio_mode", "paired") == "paired"
+            groups["videos"].append(name)
+            groups["video_audios"].append(name if paired else "")
+            if bool(item.get("has_audio")) and item.get("audio_mode") == "standalone":
+                groups["audios"].append(name)
+        elif kind == "audio":
+            groups["audios"].append(name)
+
+    # Only where the walk agrees with what actually arrived. It disagreeing means
+    # the loader's partitioning has moved on from what is written above, and a
+    # name against the wrong file is worse than no name at all.
+    return {key: (names if len(names) == len(bundle.get(key) or []) else [])
+            for key, names in groups.items()}
+
+
+def _from_bundle(bundle, takes="full"):
+    """A `H3_REFS` bundle -> `(references, videos, audios, {handle: picture})`.
+
+    Read positionally, in the bundle's own order, because that order is the one
+    thing about it that is load-bearing: it is what the Reference Splitter fans
+    out into H3's node, so it is what decides the ordinals the sampler assigns.
+    `assets.plan` walks the three groups the same way, which is what keeps the
+    `<Picture 2>` in the prompt pointing at the tensor the sampler calls
+    `<Picture 2>`.
+
+    `takes` narrows the pictures, exactly as it narrows the ones arriving on the
+    node's own socket. The bundle carries no per-item scope of its own.
+    """
+    if not isinstance(bundle, dict):
+        raise harness.RefineError(
+            "the references input did not receive a MiniMax H3 reference bundle")
+
+    names = _names(bundle)
+    references, videos, audios, pictures = [], [], [], {}
+
+    for index, picture in enumerate(bundle.get("pictures") or [], start=1):
+        asset = assets.image("reference", index,
+                             _name(names["pictures"], index, "picture"), takes=takes)
+        references.append(asset)
+        pictures[asset.handle] = _still(picture)
+
+    tracks = list(bundle.get("video_audios") or [])
+    for index, clip in enumerate(bundle.get("videos") or [], start=1):
+        asset = assets.video(index, _name(names["videos"], index, "video"),
+                             sound=index <= len(tracks) and tracks[index - 1] is not None)
+        videos.append(asset)
+        pictures[asset.handle] = _still(clip)
+
+    for index, _ in enumerate(bundle.get("audios") or [], start=1):
+        audios.append(assets.audio(index, _name(names["audios"], index, "audio")))
+
+    return references, videos, audios, {h: p for h, p in pictures.items() if p is not None}
+
+
+def _name(names, ordinal, kind):
+    """The file's own name where the bundle gave one, else what it is and where."""
+    if ordinal <= len(names) and names[ordinal - 1]:
+        return names[ordinal - 1]
+    return f"{kind} {ordinal}"
+
+
 def _skill_names():
     """The instruction files installed, for the widget. Always with "none" first."""
     return ["none"] + list(skills.list_skills())
@@ -229,10 +347,16 @@ class H3PromptRefiner:
                 "references": ("IMAGE", {"tooltip": "Reference pictures — a batch is "
                                                     "several of them, labelled in "
                                                     "batch order."}),
+                "reference_bundle": (BUNDLE, {"tooltip":
+                                     "A references bundle from the Fantastic MiniMax "
+                                     "H3 Prompt Builder's Media Loader or Prompt "
+                                     "Builder. Carries pictures, clips and audio, "
+                                     "labelled in the order H3 presents them."}),
                 "reference_takes": (list(assets.TAKES), {"default": "full",
-                                    "tooltip": "What of the references is the "
+                                    "tooltip": "What of the reference pictures is the "
                                                "reference. `full` is the whole "
-                                               "picture."}),
+                                               "picture. Applies to both reference "
+                                               "inputs."}),
                 "instructions": ("STRING", {"multiline": True, "default": "",
                                   "tooltip": "Your own writing instructions, added to "
                                              "the built-in prompting. They outrank the "
@@ -262,17 +386,27 @@ class H3PromptRefiner:
 
     def run(self, refiner, prompt, seconds, template, cut_shots, language,
             temperature, seed, reply_tokens, start_frame=None, end_frame=None,
-            references=None, reference_takes="full", instructions="", skill="none",
-            skill_mode=skills.ADD):
+            references=None, reference_bundle=None, reference_takes="full",
+            instructions="", skill="none", skill_mode=skills.ADD):
         chat, look = _backend(refiner)
 
         # The presentation order, which is what `assets.plan` labels against:
-        # references first, then the frames. Built here because this is where the
-        # sockets are, and handed over as ordinary assets from there on.
-        pictures, refs = {}, []
-        for index, picture in enumerate(_frames(references), start=1):
-            asset = assets.image("reference", index, f"reference {index}",
-                                 takes=reference_takes)
+        # pictures, clips, standalone audio, then the frames. Built here because
+        # this is where the sockets are, and handed over as ordinary assets from
+        # there on.
+        #
+        # A bundle and the plain socket are read as one list of pictures, the
+        # bundle's first — it is the input that also carries clips and audio, so
+        # letting the loose socket cut in front of it would renumber every
+        # citation the Prompt Builder wrote against the same media.
+        pictures, refs, videos, audios = {}, [], [], []
+        if reference_bundle is not None:
+            refs, videos, audios, pictures = _from_bundle(reference_bundle,
+                                                          reference_takes)
+
+        for picture in _frames(references):
+            asset = assets.image("reference", len(refs) + 1,
+                                 f"reference {len(refs) + 1}", takes=reference_takes)
             refs.append(asset)
             pictures[asset.handle] = picture
 
@@ -298,7 +432,8 @@ class H3PromptRefiner:
         result = request.refine(
             prompt, chat, look,
             model=refiner.get("model", ""),
-            first_frame=first, last_frame=last, references=refs, pictures=pictures,
+            first_frame=first, last_frame=last, references=refs, videos=videos,
+            audios=audios, pictures=pictures,
             seconds=seconds, template=template, language=language,
             temperature=temperature, seed=seed, max_tokens=reply_tokens,
             # A skill set to `replace` takes the whole prompt over; one set to

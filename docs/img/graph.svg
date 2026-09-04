@@ -26,6 +26,15 @@
 
   <path class="wire" d="M212 62 C 248 62, 248 74, 284 74"/>
 
+  <rect class="box" x="12" y="150" width="196" height="70" rx="8"/>
+  <text class="head" x="28" y="176">Media Loader</text>
+  <text class="sub"  x="28" y="196">Fantastic H3 Prompt Builder</text>
+  <text class="sub"  x="28" y="212">pictures, clips, audio</text>
+  <circle class="dot" cx="208" cy="194" r="4"/>
+  <text class="sock" x="196" y="176" text-anchor="end">references</text>
+
+  <path class="wire" d="M212 194 C 248 194, 248 194, 284 194"/>
+
   <rect class="box" x="288" y="14" width="212" height="222" rx="8"/>
   <text class="head" x="304" y="40">H3 Prompt Refiner</text>
   <circle class="dot" cx="288" cy="74" r="4"/>
@@ -36,6 +45,8 @@
   <text class="sock" x="300" y="150">start_frame</text>
   <circle class="dot" cx="288" cy="170" r="4"/>
   <text class="sock" x="300" y="174">references</text>
+  <circle class="dot" cx="288" cy="194" r="4"/>
+  <text class="sock" x="300" y="198">reference_bundle</text>
   <circle class="dot" cx="500" cy="146" r="4"/>
   <text class="sock" x="488" y="150" text-anchor="end">prompt</text>
   <circle class="dot" cx="500" cy="170" r="4"/>

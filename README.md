@@ -106,7 +106,7 @@ What is plugged in decides the mode:
 | `start_frame` | I2VA | opens on exactly that image |
 | `end_frame` | L2VA | arrives at exactly that image |
 | both | FL2VA | the path from one to the other |
-| anything on `references` | REF2VA | the six-section reference form |
+| anything cited — `references` or a bundle | REF2VA | the six-section reference form |
 
 `template` pins one of those over the derived answer. The pin is honoured;
 crossing into or out of the reference form costs fidelity and the `notes` output
@@ -122,6 +122,46 @@ picture; `person`, `object`, `scene` and `style` tell the refiner to define that
 alone and retain nothing else from the picture, which is the fix for the failure
 where one attached photograph becomes the place the model grounds everybody the
 request mentions, seen there or not.
+
+### Reference bundles
+
+`reference_bundle` takes the `references` output of [ComfyUI-Fantastic-MiniMaxH3-PromptBuilder][builder]'s
+Media Loader or Prompt Builder — its drag-and-drop panel, its trimming and
+cropping, and the clips and audio the plain `IMAGE` socket cannot carry.
+
+```
+Media Loader ─references─┬─► H3 Prompt Refiner ─prompt─► CLIPTextEncode
+                         └─► Reference Splitter ──────► MiniMaxH3ReferenceToVideo
+```
+
+Nothing is imported and neither pack depends on the other — ComfyUI matches
+sockets by type name, so the wire is the whole of it. Install the builder if you
+want the input; without it the socket simply never gets connected.
+
+The bundle brings three things the `IMAGE` socket cannot:
+
+- **Clips.** A reference video becomes `<Video N>`. The refiner is shown one
+  frame from the middle of it — enough to say what the clip holds, and the
+  opening frame is too often a fade or an empty room.
+- **Audio.** Standalone sounds become `<Audio N>`. Nothing can be shown of them,
+  so the glossary line says as much and tells the model to take what the clip
+  holds from your request instead.
+- **Paired soundtracks.** A clip carrying its own audio is *two* citations: its
+  `<Audio j>` is presented immediately before its `<Video k>`, which is the
+  order H3's own node feeds the tokenizer. The clip's glossary line names the
+  soundtrack's label so the rewrite can talk about what it sounds like.
+
+**Order is the contract.** The ordinals the refiner writes are the ones the
+sampler will assign, and both are read off the bundle's own order: pictures,
+then videos with their paired soundtracks, then standalone audio, with this
+node's `start_frame` and `end_frame` trailing all of it. Wire the same bundle to
+the Reference Splitter and they agree by construction. If you also plug a loose
+picture into `references`, it is numbered *after* everything in the bundle —
+otherwise it would renumber every citation the Prompt Builder already wrote.
+
+A bundle with anything in it makes the request REF2VA, sounds included: a
+soundtrack is something cited, and the six-section reference form is where
+citations get defined.
 
 ### The outputs
 
@@ -165,6 +205,9 @@ trip, the checks, the key binding — testable at all.
 
 - [ComfyUI-Continuity][continuity] by roadmaus — this is its refiner, and every
   design decision in it is theirs. MIT, and the license came with the code.
+- [ComfyUI-Fantastic-MiniMaxH3-PromptBuilder][builder] by Adudeguyman — its
+  `H3_REFS` bundle is what `reference_bundle` reads, and its media loader is a
+  far better way to attach references than an `IMAGE` socket.
 - [ComfyUI](https://github.com/comfyanonymous/ComfyUI) by Comfy Org — H3 lives
   in core; this writes prompts for it.
 - MiniMax — the H3 prompting guides the templates are distilled from.
@@ -174,3 +217,4 @@ trip, the checks, the key binding — testable at all.
 [MIT](LICENSE), the same as upstream.
 
 [continuity]: https://github.com/roadmaus/ComfyUI-Continuity
+[builder]: https://github.com/Adudeguyman/ComfyUI-Fantastic-MiniMaxH3-PromptBuilder

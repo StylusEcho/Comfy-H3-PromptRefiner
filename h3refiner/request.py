@@ -63,6 +63,14 @@ def _glossary(ordered, labels, pictures, limit=MAX_IMAGES):
     slots, kept, shown, dropped = [], [], [], 0
     for asset in ordered:
         slot = prompting.slot_row(asset, labels.get(asset.handle))
+        # A clip presented with its soundtrack is two citations, and the second
+        # has no handle to hang a line of its own on (see `assets.plan`). Said on
+        # the clip's line instead, which is where a model looking for the number
+        # would look — and without it a rewrite that wants to say what the clip
+        # sounds like has no label to write.
+        track = labels.get(f"{asset.handle}:sound")
+        if track:
+            _note(slot, f"its soundtrack rides along as {track}")
         picture = pictures.get(asset.handle)
         if picture is None:
             if asset.kind != "audio" and asset.track != "sound":
@@ -70,17 +78,28 @@ def _glossary(ordered, labels, pictures, limit=MAX_IMAGES):
                 # silent, because the glossary line stays either way and a handle
                 # the model believes it can see is worse than one it knows it
                 # cannot.
-                slot["note"] = "no picture of it is attached"
+                _note(slot, "no picture of it is attached")
         elif len(kept) >= limit:
             dropped += 1
-            slot["note"] = (f"not shown to the model — one call looks at at most "
-                            f"{limit} images")
+            _note(slot, f"not shown to the model — one call looks at at most "
+                        f"{limit} images")
         else:
             kept.append(picture)
             shown.append(asset.handle)
             slot["image"] = len(kept)
         slots.append(slot)
     return slots, kept, tuple(shown), dropped
+
+
+def _note(slot, text):
+    """Add a note to a glossary line, keeping whatever it already said.
+
+    `slot_row` writes the note that governs what an asset *is* — an audio
+    reference nothing can hear, a picture narrowed to the person in it — and
+    everything added here is about how it reaches this particular call. Both
+    matter, so they are joined rather than one replacing the other.
+    """
+    slot["note"] = f"{slot['note']}. {text}" if slot.get("note") else text
 
 
 def _dropped_note(dropped):
@@ -175,9 +194,9 @@ def _run_skill(skill, chat, look, model, request, labels, handles, refs, slots,
 
 
 def refine(request, chat, look, model="", first_frame=None, last_frame=None,
-           references=(), pictures=None, seconds=0.0, template="auto",
-           language="English", temperature=TEMPERATURE, seed=-1, max_tokens=None,
-           extra="", skill=None, cut_shots=True):
+           references=(), videos=(), audios=(), pictures=None, seconds=0.0,
+           template="auto", language="English", temperature=TEMPERATURE, seed=-1,
+           max_tokens=None, extra="", skill=None, cut_shots=True):
     """One rewrite. -> the result dict `_out` describes.
 
     `chat` and `look` are the backend: one generation, and whatever that backend
@@ -185,7 +204,14 @@ def refine(request, chat, look, model="", first_frame=None, last_frame=None,
     passed in rather than chosen here so that this module needs neither torch nor
     a network, and so the tests can drive the whole path against a canned reply.
 
-    `pictures` is `handle -> PIL image`, for the assets that have one.
+    `references`, `videos` and `audios` are the three reference groups, in the
+    order H3 presents them; `assets.plan` is what turns them into labels. The
+    node's own sockets only fill `references`, and a `H3_REFS` bundle from the
+    Fantastic MiniMax H3 Prompt Builder fills all three.
+
+    `pictures` is `handle -> PIL image`, for the assets that have one. A video
+    contributes one representative frame; an audio reference contributes nothing
+    and its glossary line says so.
 
     `cut_shots` is whether the model may divide the request into several shots
     for itself. There is nothing else to divide one request — no cards, no
@@ -199,11 +225,11 @@ def refine(request, chat, look, model="", first_frame=None, last_frame=None,
         raise harness.RefineError("there is nothing to refine — write a prompt first")
 
     pictures = dict(pictures or {})
-    ordered, labels = assets.plan(first_frame, last_frame, references)
+    ordered, labels = assets.plan(first_frame, last_frame, references, videos, audios)
     handles = {asset.handle for asset in ordered}
     refs = {asset.handle for asset in ordered if asset.role == "reference"}
 
-    derived = assets.derive_mode(first_frame, last_frame, references)
+    derived = assets.derive_mode(first_frame, last_frame, references, videos, audios)
     mode, forced = prompting.choose_template(template, derived)
 
     slots, pictures, shown, dropped = _glossary(ordered, labels, pictures)
